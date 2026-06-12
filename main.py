@@ -4,11 +4,29 @@ import queue
 import winreg
 import sys
 import os
+import socket
 import customtkinter as ctk
 import pystray
 from PIL import Image, ImageDraw
 import screen_brightness_control as sbc
 from monitorcontrol import get_monitors
+
+SINGLE_INSTANCE_PORT = 28935
+
+def check_single_instance():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.bind(('127.0.0.1', SINGLE_INSTANCE_PORT))
+        return s
+    except socket.error:
+        # Another instance is already running
+        try:
+            s2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s2.sendto(b"show", ('127.0.0.1', SINGLE_INSTANCE_PORT))
+            s2.close()
+        except Exception:
+            pass
+        sys.exit(0)
 
 # Standard Preset Configurations (Brightness, Contrast)
 PRESETS = {
@@ -229,8 +247,11 @@ class MonitorCommandWorker:
 
 
 class DisplayControlApp(ctk.CTk):
-    def __init__(self):
+    def __init__(self, bound_socket):
         super().__init__()
+        
+        # Start single instance listener
+        self.start_single_instance_listener(bound_socket)
 
         # Window Config
         self.title("Painel de Controle de Monitores")
@@ -689,14 +710,33 @@ class DisplayControlApp(ctk.CTk):
         self.update_status_bar("Minimizado na bandeja de sistema.")
 
     def restore_from_tray(self, icon=None, item=None):
-        self.after(0, self.deiconify)
+        def restore():
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        self.after(0, restore)
 
     def quit_app(self, icon=None, item=None):
         if self.tray_icon:
             self.tray_icon.stop()
         self.after(0, self.destroy)
 
+    def start_single_instance_listener(self, bound_socket):
+        self.instance_socket = bound_socket
+        self.instance_thread = threading.Thread(target=self._single_instance_worker, daemon=True)
+        self.instance_thread.start()
+
+    def _single_instance_worker(self):
+        while True:
+            try:
+                data, addr = self.instance_socket.recvfrom(1024)
+                if data == b"show":
+                    self.restore_from_tray()
+            except Exception:
+                break
+
 
 if __name__ == "__main__":
-    app = DisplayControlApp()
+    bound_socket = check_single_instance()
+    app = DisplayControlApp(bound_socket)
     app.mainloop()
