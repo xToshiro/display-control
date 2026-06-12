@@ -1,0 +1,9 @@
+venv/
+build/
+dist/
+__pycache__/
+*.spec
+*.pyc
+app_icon.ico
+I-Menu/
+I-Menu Setup 2.1.0.exe
