@@ -6,6 +6,10 @@ import sys
 import os
 import socket
 import json
+import requests
+import webbrowser
+import ctypes
+import locale
 from tkinter import messagebox
 import customtkinter as ctk
 import pystray
@@ -14,6 +18,162 @@ import screen_brightness_control as sbc
 from monitorcontrol import get_monitors
 import win32api
 import win32con
+
+VERSION = "v1.2.0"
+
+TRANSLATIONS = {
+    "pt": {
+        "title": "Painel de Controle de Monitores",
+        "tab_monitors": "Monitores",
+        "tab_about": "Sobre",
+        "start_with_windows": "Iniciar com Windows",
+        "startup_profile": "Perfil Inicial:",
+        "sync": "Sincronizar",
+        "brightness": "Brilho: {}%",
+        "contrast": "Contraste: {}%",
+        "color": "Cor",
+        "resolution": "Resolução",
+        "screen_ratio": "Tela:",
+        "system_res": "Sistema:",
+        "standard_presets": "Perfis Padrão (Ambos):",
+        "custom_presets": "Perfis Personalizados:",
+        "save_current": "Salvar Atual",
+        "delete": "Excluir",
+        "reload": "Recarregar",
+        "loading": "Procurando monitores DDC/CI...\nIsso pode levar alguns segundos.",
+        "none_found": "Nenhum Monitor DDC/CI Encontrado",
+        "check_updates": "Verificar Atualização",
+        "no_updates": "Você está na versão mais recente!",
+        "update_available": "Nova versão disponível: {}!",
+        "error_checking_updates": "Erro ao verificar atualizações.",
+        "creator": "Criador:",
+        "repo": "Repositório:",
+        "version": "Versão:",
+        "select_lang": "Idioma:",
+        "checking_updates": "Verificando...",
+        "update_btn": "Baixar Atualização",
+        "user_color": "Usuário",
+        "none_option": "Nenhum",
+        "presets": {
+            "Leitura": "Leitura",
+            "Trabalho": "Trabalho",
+            "Jogos": "Jogos",
+            "Noite": "Noite"
+        },
+        "dialog_save_title": "Salvar Perfil",
+        "dialog_save_text": "Digite o nome para o perfil personalizado:",
+        "dialog_save_invalid_title": "Nome Inválido",
+        "dialog_save_invalid_text": "Este nome de perfil é reservado pelo sistema. Escolha outro nome.",
+        "dialog_delete_title": "Confirmar Exclusão",
+        "dialog_delete_text": "Tem certeza que deseja excluir o perfil '{}'?",
+        "instructions": (
+            "DDC/CI é o protocolo que permite ajustar brilho/contraste pelo PC.\n\n"
+            "Verificações recomendadas:\n"
+            "1. Habilite o suporte a DDC/CI nas configurações físicas do monitor (menu OSD).\n"
+            "2. Certifique-se de que os monitores estão conectados por HDMI, DisplayPort ou USB-C.\n"
+            "3. Reinicie este aplicativo e tente recarregar."
+        ),
+        "tray_open": "Abrir Painel",
+        "tray_profile": "Perfil",
+        "tray_quit": "Sair",
+        "status_preset_applied": "Perfil '{}' aplicado.",
+        "status_startup_preset_changed": "Perfil inicial alterado para '{}'.",
+        "status_ready": "Pronto",
+        "status_scanning": "Buscando...",
+        "status_minimized": "Minimizado na bandeja de sistema.",
+        "status_preset_saved": "Perfil '{}' salvo com sucesso.",
+        "status_preset_deleted": "Perfil '{}' excluído.",
+        "status_res_changed": "Resolução do Monitor {} alterada para {}.",
+        "status_res_error_title": "Erro de Resolução",
+        "status_res_error_text": "Não foi possível alterar a resolução do monitor para {}. Código: {}"
+    },
+    "en": {
+        "title": "Monitor Control Panel",
+        "tab_monitors": "Monitors",
+        "tab_about": "About",
+        "start_with_windows": "Start with Windows",
+        "startup_profile": "Startup Profile:",
+        "sync": "Synchronize",
+        "brightness": "Brightness: {}%",
+        "contrast": "Contrast: {}%",
+        "color": "Color",
+        "resolution": "Resolution",
+        "screen_ratio": "Screen:",
+        "system_res": "System:",
+        "standard_presets": "Standard Profiles (Both):",
+        "custom_presets": "Custom Profiles:",
+        "save_current": "Save Current",
+        "delete": "Delete",
+        "reload": "Reload",
+        "loading": "Scanning for DDC/CI monitors...\nThis may take a few seconds.",
+        "none_found": "No DDC/CI Monitors Found",
+        "check_updates": "Check for Updates",
+        "no_updates": "You are on the latest version!",
+        "update_available": "New version available: {}!",
+        "error_checking_updates": "Error checking for updates.",
+        "creator": "Creator:",
+        "repo": "Repository:",
+        "version": "Version:",
+        "select_lang": "Language:",
+        "checking_updates": "Checking...",
+        "update_btn": "Download Update",
+        "user_color": "User",
+        "none_option": "None",
+        "presets": {
+            "Leitura": "Reading",
+            "Trabalho": "Work",
+            "Jogos": "Gaming",
+            "Noite": "Night"
+        },
+        "dialog_save_title": "Save Profile",
+        "dialog_save_text": "Enter name for the new custom profile:",
+        "dialog_save_invalid_title": "Invalid Name",
+        "dialog_save_invalid_text": "This profile name is reserved by the system. Please choose another name.",
+        "dialog_delete_title": "Confirm Delete",
+        "dialog_delete_text": "Are you sure you want to delete profile '{}'?",
+        "instructions": (
+            "DDC/CI is the protocol that allows PC control of brightness/contrast.\n\n"
+            "Recommended checks:\n"
+            "1. Enable DDC/CI support in your physical monitor's OSD menu.\n"
+            "2. Ensure monitors are connected via HDMI, DisplayPort, or USB-C.\n"
+            "3. Restart this app and try reloading."
+        ),
+        "tray_open": "Open Panel",
+        "tray_profile": "Profile",
+        "tray_quit": "Exit",
+        "status_preset_applied": "Profile '{}' applied.",
+        "status_startup_preset_changed": "Startup profile changed to '{}'.",
+        "status_ready": "Ready",
+        "status_scanning": "Scanning...",
+        "status_minimized": "Minimized to system tray.",
+        "status_preset_saved": "Profile '{}' saved successfully.",
+        "status_preset_deleted": "Profile '{}' deleted.",
+        "status_res_changed": "Monitor {} resolution changed to {}.",
+        "status_res_error_title": "Resolution Error",
+        "status_res_error_text": "Could not change monitor resolution to {}. Code: {}"
+    }
+}
+
+def get_system_lang():
+    try:
+        # Get user default UI language from Windows
+        windll = ctypes.windll.kernel32
+        lang_id = windll.GetUserDefaultUILanguage()
+        # Primary language identifier (lower 10 bits)
+        prim_lang = lang_id & 0x3ff
+        # 0x09 is English (LANG_ENGLISH)
+        if prim_lang == 0x09:
+            return "en"
+    except Exception:
+        pass
+    try:
+        # Fallback to locale
+        loc = locale.getlocale()[0]
+        if loc and loc.lower().startswith("en"):
+            return "en"
+    except Exception:
+        pass
+    return "pt"
 
 SINGLE_INSTANCE_PORT = 28935
 
@@ -376,6 +536,38 @@ class MonitorCommandWorker:
 
 
 class DisplayControlApp(ctk.CTk):
+    def translate(self, key):
+        keys = key.split(".")
+        val = TRANSLATIONS.get(self.lang, TRANSLATIONS["pt"])
+        for k in keys:
+            if isinstance(val, dict):
+                val = val.get(k, k)
+            else:
+                return key
+        return val
+
+    def ui_to_preset_key(self, ui_name):
+        if ui_name == self.translate("none_option"):
+            return "Nenhum"
+        for k in PRESETS.keys():
+            if ui_name == self.translate(f"presets.{k}"):
+                return k
+        return ui_name
+
+    def preset_key_to_ui(self, key):
+        if key == "Nenhum":
+            return self.translate("none_option")
+        if key in PRESETS:
+            return self.translate(f"presets.{key}")
+        return key
+
+    def get_scaling_label(self, val):
+        if self.lang == "en":
+            mapping = {3: "Full", 2: "Aspect", 1: "1:1"}
+        else:
+            mapping = {3: "Inteiro", 2: "Proporcional", 1: "1:1"}
+        return mapping.get(val, "Aspect" if self.lang == "en" else "Proporcional")
+
     def __init__(self, bound_socket):
         super().__init__()
         
@@ -388,12 +580,13 @@ class DisplayControlApp(ctk.CTk):
 
         # Load configuration
         self.load_config()
+        self.lang = self.config.get("language", "pt")
 
         self.is_first_scan = True
 
         # Window Config
-        self.title("Painel de Controle de Monitores")
-        self.geometry("840x730")
+        self.title(self.translate("title"))
+        self.geometry("800x730")
         self.resizable(False, False)
         
         # UI Styling options
@@ -446,8 +639,8 @@ class DisplayControlApp(ctk.CTk):
         
         self.title_label = ctk.CTkLabel(
             self.header_frame, 
-            text="Display Control Panel", 
-            font=ctk.CTkFont(size=22, weight="bold")
+            text=self.translate("title"), 
+            font=ctk.CTkFont(size=16, weight="bold")
         )
         self.title_label.pack(side="left")
 
@@ -457,7 +650,7 @@ class DisplayControlApp(ctk.CTk):
 
         self.startup_check = ctk.CTkCheckBox(
             self.top_controls, 
-            text="Iniciar com Windows", 
+            text=self.translate("start_with_windows"), 
             command=self.toggle_startup,
             font=ctk.CTkFont(size=12)
         )
@@ -469,14 +662,14 @@ class DisplayControlApp(ctk.CTk):
         self.startup_preset_container = ctk.CTkFrame(self.top_controls, fg_color="transparent")
         self.startup_preset_container.pack(side="left", padx=10)
         
-        lbl_start_pres = ctk.CTkLabel(self.startup_preset_container, text="Perfil Inicial:", font=ctk.CTkFont(size=12))
-        lbl_start_pres.pack(side="left", padx=(0, 5))
+        self.lbl_start_pres = ctk.CTkLabel(self.startup_preset_container, text=self.translate("startup_profile"), font=ctk.CTkFont(size=12))
+        self.lbl_start_pres.pack(side="left", padx=(0, 5))
         
-        self.startup_preset_var = ctk.StringVar(value="Nenhum")
+        self.startup_preset_var = ctk.StringVar(value=self.translate("none_option"))
         self.startup_preset_menu = ctk.CTkOptionMenu(
             self.startup_preset_container,
             variable=self.startup_preset_var,
-            values=["Nenhum"],
+            values=[self.translate("none_option")],
             width=120,
             height=24,
             font=ctk.CTkFont(size=11),
@@ -486,7 +679,7 @@ class DisplayControlApp(ctk.CTk):
 
         self.sync_check = ctk.CTkCheckBox(
             self.top_controls, 
-            text="Sincronizar", 
+            text=self.translate("sync"), 
             command=self.toggle_sync,
             font=ctk.CTkFont(size=12)
         )
@@ -495,13 +688,23 @@ class DisplayControlApp(ctk.CTk):
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.content_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=5)
         
+        # Create TabView inside content_frame
+        self.tabview = ctk.CTkTabview(self.content_frame, fg_color="transparent")
+        self.tabview.pack(fill="both", expand=True)
+
+        self.tab_monitors = self.tabview.add(self.translate("tab_monitors"))
+        self.tab_about = self.tabview.add(self.translate("tab_about"))
+        
+        # Build static about tab content
+        self.build_about_tab()
+        
         # --- Bottom Status Bar Frame ---
         self.bottom_frame = ctk.CTkFrame(self, height=35, corner_radius=0)
         self.bottom_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         
         self.status_label = ctk.CTkLabel(
             self.bottom_frame, 
-            text="Carregando...", 
+            text=self.translate("loading"), 
             font=ctk.CTkFont(size=11), 
             text_color="gray"
         )
@@ -509,7 +712,7 @@ class DisplayControlApp(ctk.CTk):
 
         self.refresh_btn = ctk.CTkButton(
             self.bottom_frame, 
-            text="Recarregar", 
+            text=self.translate("reload"), 
             width=80, 
             height=24,
             command=self.trigger_scan,
@@ -517,45 +720,267 @@ class DisplayControlApp(ctk.CTk):
         )
         self.refresh_btn.pack(side="right", padx=15, pady=5)
 
-    def show_loading(self):
-        # Clear content frame
-        for widget in self.content_frame.winfo_children():
+    def build_about_tab(self):
+        tab = self.tab_about
+        for widget in tab.winfo_children():
             widget.destroy()
             
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(0, weight=1)
+        
+        about_card = ctk.CTkFrame(tab, fg_color="#0F172A", border_color="#1E293B", border_width=1)
+        about_card.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        about_card.grid_columnconfigure(0, weight=1)
+        
+        title = ctk.CTkLabel(
+            about_card, 
+            text="AOC Display Control Panel", 
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color="#0EA5E9"
+        )
+        title.pack(pady=(20, 5))
+        
+        desc = ctk.CTkLabel(
+            about_card, 
+            text="Alternativa leve e moderna ao AOC I-Menu." if self.lang == "pt" else "A lightweight, modern alternative to AOC I-Menu.",
+            font=ctk.CTkFont(size=12)
+        )
+        desc.pack(pady=(0, 15))
+        
+        info_frame = ctk.CTkFrame(about_card, fg_color="transparent")
+        info_frame.pack(pady=10, padx=20)
+        info_frame.grid_columnconfigure(0, weight=0)
+        info_frame.grid_columnconfigure(1, weight=1)
+        
+        lbl_ver_name = ctk.CTkLabel(info_frame, text=self.translate("version"), font=ctk.CTkFont(size=11, weight="bold"), anchor="w", width=90)
+        lbl_ver_name.grid(row=0, column=0, sticky="w", pady=4)
+        lbl_ver_val = ctk.CTkLabel(info_frame, text=VERSION, font=ctk.CTkFont(size=11), anchor="w")
+        lbl_ver_val.grid(row=0, column=1, sticky="w", pady=4)
+        
+        lbl_creator_name = ctk.CTkLabel(info_frame, text=self.translate("creator"), font=ctk.CTkFont(size=11, weight="bold"), anchor="w", width=90)
+        lbl_creator_name.grid(row=1, column=0, sticky="w", pady=4)
+        lbl_creator_val = ctk.CTkLabel(info_frame, text="xToshiro", font=ctk.CTkFont(size=11), anchor="w")
+        lbl_creator_val.grid(row=1, column=1, sticky="w", pady=4)
+        
+        lbl_repo_name = ctk.CTkLabel(info_frame, text=self.translate("repo"), font=ctk.CTkFont(size=11, weight="bold"), anchor="w", width=90)
+        lbl_repo_name.grid(row=2, column=0, sticky="w", pady=4)
+        
+        btn_repo = ctk.CTkButton(
+            info_frame,
+            text="github.com/xToshiro/display-control",
+            font=ctk.CTkFont(size=11, underline=True),
+            text_color="#38BDF8",
+            fg_color="transparent",
+            hover_color="#1E293B",
+            width=200,
+            anchor="w",
+            height=20,
+            command=lambda: webbrowser.open_new_tab("https://github.com/xToshiro/display-control")
+        )
+        btn_repo.grid(row=2, column=1, sticky="w", pady=4)
+        
+        lbl_lang_name = ctk.CTkLabel(info_frame, text=self.translate("select_lang"), font=ctk.CTkFont(size=11, weight="bold"), anchor="w", width=90)
+        lbl_lang_name.grid(row=3, column=0, sticky="w", pady=4)
+        
+        lang_var = ctk.StringVar(value="Português (BR)" if self.lang == "pt" else "English")
+        lang_menu = ctk.CTkOptionMenu(
+            info_frame,
+            variable=lang_var,
+            values=["Português (BR)", "English"],
+            width=140,
+            height=24,
+            font=ctk.CTkFont(size=11),
+            command=self.on_language_selector_changed
+        )
+        lang_menu.grid(row=3, column=1, sticky="w", pady=4)
+        
+        sep = ctk.CTkFrame(about_card, height=1, fg_color="#1E293B")
+        sep.pack(fill="x", padx=30, pady=15)
+        
+        update_container = ctk.CTkFrame(about_card, fg_color="transparent")
+        update_container.pack(fill="x", padx=30, pady=(0, 20))
+        
+        self.update_status_label = ctk.CTkLabel(
+            update_container,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        )
+        self.update_status_label.pack(pady=(0, 10))
+        
+        self.check_updates_btn = ctk.CTkButton(
+            update_container,
+            text=self.translate("check_updates"),
+            width=150,
+            height=28,
+            fg_color="#1E293B",
+            hover_color="#334155",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.trigger_update_check
+        )
+        self.check_updates_btn.pack()
+        
+        self.download_update_btn = ctk.CTkButton(
+            update_container,
+            text=self.translate("update_btn"),
+            width=150,
+            height=28,
+            fg_color="#10B981",
+            hover_color="#059669",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.open_download_url
+        )
+        self.download_url = None
+
+    def on_language_selector_changed(self, selected_label):
+        new_lang = "pt" if selected_label == "Português (BR)" else "en"
+        if new_lang != self.lang:
+            self.lang = new_lang
+            self.config["language"] = new_lang
+            self.save_config()
+            self.after(50, self.apply_translations)
+
+    def check_for_updates(self):
+        def parse_version(v_str):
+            try:
+                return tuple(int(x) for x in v_str.lstrip('v').split('.'))
+            except Exception:
+                return (0, 0, 0)
+        try:
+            r = requests.get("https://api.github.com/repos/xToshiro/display-control/releases/latest", timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                latest_version = data.get("tag_name", VERSION)
+                html_url = data.get("html_url", "https://github.com/xToshiro/display-control/releases")
+                
+                if parse_version(latest_version) > parse_version(VERSION):
+                    return latest_version, html_url
+                else:
+                    return None, None
+            else:
+                return False, None
+        except Exception:
+            return False, None
+
+    def trigger_update_check(self):
+        self.update_status_label.configure(text=self.translate("checking_updates"), text_color="gray")
+        self.check_updates_btn.configure(state="disabled")
+        self.download_update_btn.pack_forget()
+        threading.Thread(target=self._update_check_thread, daemon=True).start()
+
+    def _update_check_thread(self):
+        latest_version, html_url = self.check_for_updates()
+        self.after(0, lambda: self.on_update_check_finished(latest_version, html_url))
+
+    def on_update_check_finished(self, latest_version, html_url):
+        self.check_updates_btn.configure(state="normal")
+        if latest_version is False:
+            self.update_status_label.configure(text=self.translate("error_checking_updates"), text_color="#FF6666")
+        elif latest_version is None:
+            self.update_status_label.configure(text=self.translate("no_updates"), text_color="gray")
+        else:
+            self.update_status_label.configure(
+                text=self.translate("update_available").format(latest_version),
+                text_color="#10B981"
+            )
+            self.download_url = html_url
+            self.download_update_btn.pack(pady=10)
+
+    def open_download_url(self):
+        if self.download_url:
+            webbrowser.open_new_tab(self.download_url)
+        else:
+            webbrowser.open_new_tab("https://github.com/xToshiro/display-control/releases")
+
+    def apply_translations(self):
+        self.title(self.translate("title"))
+        self.title_label.configure(text=self.translate("title"))
+        self.startup_check.configure(text=self.translate("start_with_windows"))
+        self.lbl_start_pres.configure(text=self.translate("startup_profile"))
+        self.sync_check.configure(text=self.translate("sync"))
+        self.refresh_btn.configure(text=self.translate("reload"))
+        
+        self.recreate_tabview()
+        self.update_tray_menu()
+
+    def recreate_tabview(self):
+        selected_tab = None
+        try:
+            if hasattr(self, 'tabview'):
+                selected_tab = self.tabview.get()
+        except Exception:
+            pass
+
+        if hasattr(self, 'tabview'):
+            self.tabview.destroy()
+            
+        self.tabview = ctk.CTkTabview(self.content_frame, fg_color="transparent")
+        self.tabview.pack(fill="both", expand=True)
+
+        tab_monitors_name = self.translate("tab_monitors")
+        tab_about_name = self.translate("tab_about")
+
+        self.tab_monitors = self.tabview.add(tab_monitors_name)
+        self.tab_about = self.tabview.add(tab_about_name)
+        
+        self.build_about_tab()
+        
+        if self.monitors:
+            self.render_monitors_ui()
+        else:
+            if self.refresh_btn.cget("state") == "disabled":
+                self.show_loading()
+            else:
+                self.show_error("Nenhum monitor DDC/CI compatível encontrado.")
+
+        if selected_tab:
+            is_monitors_tab = selected_tab in ["Monitores", "Monitors"]
+            is_about_tab = selected_tab in ["Sobre", "About"]
+            try:
+                if is_monitors_tab:
+                    self.tabview.set(tab_monitors_name)
+                elif is_about_tab:
+                    self.tabview.set(tab_about_name)
+            except Exception:
+                pass
+
+    def show_loading(self):
+        # Clear tab_monitors frame
+        for widget in self.tab_monitors.winfo_children():
+            widget.destroy()
+            
+        self.tab_monitors.grid_rowconfigure(0, weight=1)
+        self.tab_monitors.grid_columnconfigure(0, weight=1)
+            
         self.loading_label = ctk.CTkLabel(
-            self.content_frame, 
-            text="Procurando monitores DDC/CI...\nIsso pode levar alguns segundos.", 
+            self.tab_monitors, 
+            text=self.translate("loading"), 
             font=ctk.CTkFont(size=16)
         )
-        self.loading_label.pack(expand=True)
+        self.loading_label.grid(row=0, column=0)
         self.refresh_btn.configure(state="disabled")
 
     def show_error(self, message):
-        for widget in self.content_frame.winfo_children():
+        for widget in self.tab_monitors.winfo_children():
             widget.destroy()
 
-        error_box = ctk.CTkFrame(self.content_frame, fg_color="#331A1A", border_color="#FF4D4D", border_width=1)
-        error_box.pack(expand=True, padx=40, pady=20, fill="both")
+        self.tab_monitors.grid_rowconfigure(0, weight=1)
+        self.tab_monitors.grid_columnconfigure(0, weight=1)
+
+        error_box = ctk.CTkFrame(self.tab_monitors, fg_color="#331A1A", border_color="#FF4D4D", border_width=1)
+        error_box.grid(row=0, column=0, padx=40, pady=20, sticky="nsew")
         
         err_title = ctk.CTkLabel(
             error_box, 
-            text="Nenhum Monitor DDC/CI Encontrado", 
+            text=self.translate("none_found"), 
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color="#FF6666"
         )
         err_title.pack(pady=(20, 10))
-
-        instructions = (
-            "DDC/CI é o protocolo que permite ajustar brilho/contraste pelo PC.\n\n"
-            "Verificações recomendadas:\n"
-            "1. Habilite o suporte a DDC/CI nas configurações físicas do monitor (menu OSD).\n"
-            "2. Certifique-se de que os monitores estão conectados por HDMI, DisplayPort ou USB-C.\n"
-            "3. Reinicie este aplicativo e tente recarregar."
-        )
         
         err_desc = ctk.CTkLabel(
             error_box, 
-            text=instructions, 
+            text=self.translate("instructions"), 
             font=ctk.CTkFont(size=12),
             justify="left"
         )
@@ -579,8 +1004,8 @@ class DisplayControlApp(ctk.CTk):
         self.after(0, self.render_monitors_ui)
 
     def render_monitors_ui(self):
-        # Clear loading widgets
-        for widget in self.content_frame.winfo_children():
+        # Clear loading widgets in tab_monitors
+        for widget in self.tab_monitors.winfo_children():
             widget.destroy()
 
         self.refresh_btn.configure(state="normal")
@@ -591,7 +1016,7 @@ class DisplayControlApp(ctk.CTk):
 
         # Adjust window width dynamically based on monitor count
         num_monitors = len(self.monitors)
-        window_width = max(540, 20 + num_monitors * 390)
+        window_width = max(680, 20 + num_monitors * 410)
         self.geometry(f"{window_width}x730")
 
         # Dynamically handle sync monitors checkbox
@@ -600,16 +1025,16 @@ class DisplayControlApp(ctk.CTk):
         else:
             self.sync_check.pack_forget()
 
-        # Configure columns and rows inside content frame
+        # Configure columns and rows inside the Monitors tab frame
+        self.tab_monitors.grid_rowconfigure(0, weight=1)
+        self.tab_monitors.grid_rowconfigure(1, weight=0)
         for col_idx in range(num_monitors):
-            self.content_frame.columnconfigure(col_idx, weight=1)
-        self.content_frame.rowconfigure(0, weight=1)
-        self.content_frame.rowconfigure(1, weight=0)
+            self.tab_monitors.grid_columnconfigure(col_idx, weight=1)
 
-        # Loop through found monitors and build their sliders
+        # Loop through found monitors and build their sliders inside self.tab_monitors
         for i, mon in enumerate(self.monitors):
             idx = mon["index"]
-            col_frame = ctk.CTkFrame(self.content_frame, border_color="#1E293B", border_width=1, fg_color="#0F172A")
+            col_frame = ctk.CTkFrame(self.tab_monitors, border_color="#1E293B", border_width=1, fg_color="#0F172A")
             col_frame.grid(row=0, column=i, sticky="nsew", padx=10, pady=10)
             
             # Header of column
@@ -634,7 +1059,7 @@ class DisplayControlApp(ctk.CTk):
             sep.pack(fill="x", padx=15, pady=5)
 
             # Brightness Controls
-            b_label_var = ctk.StringVar(value=f"Brilho: {mon['brightness']}%")
+            b_label_var = ctk.StringVar(value=self.translate("brightness").format(mon['brightness']))
             self.slider_vars[(idx, "brightness")] = b_label_var
             
             b_text_label = ctk.CTkLabel(col_frame, textvariable=b_label_var, font=ctk.CTkFont(size=13, weight="bold"))
@@ -669,7 +1094,7 @@ class DisplayControlApp(ctk.CTk):
                           command=lambda idx=idx, s=b_slider: self.adjust_step(idx, "brightness", s, 5)).pack(side="right", padx=2)
 
             # Contrast Controls
-            c_label_var = ctk.StringVar(value=f"Contraste: {mon['contrast']}%")
+            c_label_var = ctk.StringVar(value=self.translate("contrast").format(mon['contrast']))
             self.slider_vars[(idx, "contrast")] = c_label_var
             
             c_text_label = ctk.CTkLabel(col_frame, textvariable=c_label_var, font=ctk.CTkFont(size=13, weight="bold"))
@@ -707,7 +1132,7 @@ class DisplayControlApp(ctk.CTk):
             sep_color.pack(fill="x", padx=15, pady=8)
 
             # Color Presets Header
-            color_label = ctk.CTkLabel(col_frame, text="Cor", font=ctk.CTkFont(size=13, weight="bold"))
+            color_label = ctk.CTkLabel(col_frame, text=self.translate("color"), font=ctk.CTkFont(size=13, weight="bold"))
             color_label.pack(anchor="w", padx=15, pady=(2, 4))
 
             # Buttons for Color Presets
@@ -719,7 +1144,7 @@ class DisplayControlApp(ctk.CTk):
                 ("6500K", 5),
                 ("7500K", 6),
                 ("9300K", 8),
-                ("Usuário", 11)
+                (self.translate("user_color"), 11)
             ]
 
             for label, val in color_options:
@@ -742,7 +1167,7 @@ class DisplayControlApp(ctk.CTk):
             sep_res.pack(fill="x", padx=15, pady=8)
 
             # Resolution Header
-            res_header = ctk.CTkLabel(col_frame, text="Resolução", font=ctk.CTkFont(size=13, weight="bold"))
+            res_header = ctk.CTkLabel(col_frame, text=self.translate("resolution"), font=ctk.CTkFont(size=13, weight="bold"))
             res_header.pack(anchor="w", padx=15, pady=(2, 4))
 
             # Controls grid container
@@ -750,12 +1175,12 @@ class DisplayControlApp(ctk.CTk):
             res_controls_frame.pack(fill="x", padx=15, pady=(0, 10))
             
             # Row 0: Display Scaling
-            lbl_scale = ctk.CTkLabel(res_controls_frame, text="Tela:", font=ctk.CTkFont(size=11), width=60, anchor="w")
+            lbl_scale = ctk.CTkLabel(res_controls_frame, text=self.translate("screen_ratio"), font=ctk.CTkFont(size=11), width=60, anchor="w")
             lbl_scale.grid(row=0, column=0, sticky="w", pady=4)
             
-            scaling_modes = ["Inteiro", "Proporcional", "1:1"]
+            scaling_modes = ["Inteiro", "Proporcional", "1:1"] if self.lang == "pt" else ["Full", "Aspect", "1:1"]
             current_scaling_val = mon.get("display_scaling", 2)
-            current_scaling_label = REVERSE_SCALING_MAP.get(current_scaling_val, "Proporcional")
+            current_scaling_label = self.get_scaling_label(current_scaling_val)
             
             scale_var = ctk.StringVar(value=current_scaling_label)
             scale_menu = ctk.CTkOptionMenu(
@@ -771,11 +1196,11 @@ class DisplayControlApp(ctk.CTk):
             self.slider_vars[(idx, "display_scaling_dropdown")] = scale_menu
             
             # Row 1: System Resolution
-            lbl_sys_res = ctk.CTkLabel(res_controls_frame, text="Sistema:", font=ctk.CTkFont(size=11), width=60, anchor="w")
+            lbl_sys_res = ctk.CTkLabel(res_controls_frame, text=self.translate("system_res"), font=ctk.CTkFont(size=11), width=60, anchor="w")
             lbl_sys_res.grid(row=1, column=0, sticky="w", pady=4)
             
             resolutions_list = mon.get("resolutions_list", [])
-            current_sys_res = mon.get("current_resolution", "Nenhum")
+            current_sys_res = mon.get("current_resolution", self.translate("none_option"))
             if not resolutions_list:
                 resolutions_list = [current_sys_res] if current_sys_res else ["N/A"]
                 
@@ -793,20 +1218,20 @@ class DisplayControlApp(ctk.CTk):
             self.slider_vars[(idx, "system_res_dropdown")] = sys_res_menu
 
         # Global Presets Bar below monitors (makes applying presets very clean)
-        self.presets_frame = ctk.CTkFrame(self.content_frame, fg_color="#0F172A", border_color="#1E293B", border_width=1)
+        self.presets_frame = ctk.CTkFrame(self.tab_monitors, fg_color="#0F172A", border_color="#1E293B", border_width=1)
         self.presets_frame.grid(row=1, column=0, columnspan=max(1, len(self.monitors)), sticky="ew", padx=10, pady=(5, 10))
         
         # Row 0: Standard Presets
         std_container = ctk.CTkFrame(self.presets_frame, fg_color="transparent")
         std_container.pack(fill="x", padx=10, pady=5)
         
-        lbl_pres = ctk.CTkLabel(std_container, text="Perfis Padrão (Ambos):", font=ctk.CTkFont(size=12, weight="bold"))
+        lbl_pres = ctk.CTkLabel(std_container, text=self.translate("standard_presets"), font=ctk.CTkFont(size=12, weight="bold"))
         lbl_pres.pack(side="left", padx=(5, 10))
         
         for name, values in PRESETS.items():
             btn = ctk.CTkButton(
                 std_container, 
-                text=name, 
+                text=self.translate(f"presets.{name}"), 
                 width=85, 
                 height=26,
                 fg_color="#1E293B",
@@ -820,11 +1245,11 @@ class DisplayControlApp(ctk.CTk):
         custom_container = ctk.CTkFrame(self.presets_frame, fg_color="transparent")
         custom_container.pack(fill="x", padx=10, pady=(0, 10))
         
-        lbl_custom = ctk.CTkLabel(custom_container, text="Perfis Personalizados:", font=ctk.CTkFont(size=12, weight="bold"))
+        lbl_custom = ctk.CTkLabel(custom_container, text=self.translate("custom_presets"), font=ctk.CTkFont(size=12, weight="bold"))
         lbl_custom.pack(side="left", padx=(5, 10))
         
-        self.custom_presets_options = ["Nenhum"]
-        self.custom_preset_var = ctk.StringVar(value="Nenhum")
+        self.custom_presets_options = [self.translate("none_option")]
+        self.custom_preset_var = ctk.StringVar(value=self.translate("none_option"))
         self.custom_preset_menu = ctk.CTkOptionMenu(
             custom_container,
             variable=self.custom_preset_var,
@@ -838,7 +1263,7 @@ class DisplayControlApp(ctk.CTk):
         
         self.save_preset_btn = ctk.CTkButton(
             custom_container,
-            text="Salvar Atual",
+            text=self.translate("save_current"),
             width=90,
             height=26,
             fg_color="#0EA5E9",
@@ -850,7 +1275,7 @@ class DisplayControlApp(ctk.CTk):
         
         self.delete_preset_btn = ctk.CTkButton(
             custom_container,
-            text="Excluir",
+            text=self.translate("delete"),
             width=70,
             height=26,
             fg_color="#331A1A",
@@ -864,7 +1289,7 @@ class DisplayControlApp(ctk.CTk):
         # Load option menus dropdown selections
         self.update_presets_menus()
 
-        self.update_status_bar("Pronto")
+        self.update_status_bar(self.translate("status_ready"))
 
     def toggle_sync(self):
         self.sync_enabled = self.sync_check.get() == 1
@@ -901,8 +1326,10 @@ class DisplayControlApp(ctk.CTk):
     def slider_changed(self, monitor_index, feature, value):
         # Update text label instantly
         label_var = self.slider_vars[(monitor_index, feature)]
-        label_prefix = "Brilho" if feature == "brightness" else "Contraste"
-        label_var.set(f"{label_prefix}: {value}%")
+        if feature == "brightness":
+            label_var.set(self.translate("brightness").format(value))
+        else:
+            label_var.set(self.translate("contrast").format(value))
 
         # Push command to background worker
         self.worker.set_value(monitor_index, feature, value)
@@ -920,13 +1347,15 @@ class DisplayControlApp(ctk.CTk):
                 slider.set(value)
                 # Update other text label
                 label_var = self.slider_vars[(idx, feature)]
-                label_prefix = "Brilho" if feature == "brightness" else "Contraste"
-                label_var.set(f"{label_prefix}: {value}%")
+                if feature == "brightness":
+                    label_var.set(self.translate("brightness").format(value))
+                else:
+                    label_var.set(self.translate("contrast").format(value))
                 # Write command for other monitor
                 self.worker.set_value(idx, feature, value)
 
     def apply_global_preset(self, b_val, c_val):
-        self.update_status_bar("Aplicando perfil...")
+        self.update_status_bar(self.translate("status_preset_applied").format("Padrão" if self.lang == "pt" else "Standard"))
         for mon in self.monitors:
             idx = mon["index"]
             
@@ -934,14 +1363,14 @@ class DisplayControlApp(ctk.CTk):
             b_slider = self.slider_vars.get((idx, "brightness_slider"))
             if b_slider:
                 b_slider.set(b_val)
-                self.slider_vars[(idx, "brightness")].set(f"Brilho: {b_val}%")
+                self.slider_vars[(idx, "brightness")].set(self.translate("brightness").format(b_val))
                 self.worker.set_value(idx, "brightness", b_val)
                 
             # Contrast update
             c_slider = self.slider_vars.get((idx, "contrast_slider"))
             if c_slider:
                 c_slider.set(c_val)
-                self.slider_vars[(idx, "contrast")].set(f"Contraste: {c_val}%")
+                self.slider_vars[(idx, "contrast")].set(self.translate("contrast").format(c_val))
                 self.worker.set_value(idx, "contrast", c_val)
 
     def color_preset_changed(self, monitor_index, value):
@@ -997,10 +1426,10 @@ class DisplayControlApp(ctk.CTk):
             
         result = win32api.ChangeDisplaySettingsEx(gdi_device, selected_mode, 0)
         if result == win32con.DISP_CHANGE_SUCCESSFUL:
-            self.update_status_bar(f"Resolução do Monitor {monitor_index+1} alterada para {selected_res}.")
+            self.update_status_bar(self.translate("status_res_changed").format(monitor_index+1, selected_res))
             mon["current_resolution"] = selected_res
         else:
-            messagebox.showerror("Erro de Resolução", f"Não foi possível alterar a resolução do monitor para {selected_res}. Código de erro: {result}")
+            messagebox.showerror(self.translate("status_res_error_title"), self.translate("status_res_error_text").format(selected_res, result))
             dropdown = self.slider_vars.get((monitor_index, "system_res_dropdown"))
             if dropdown:
                 dropdown.set(mon.get("current_resolution", ""))
@@ -1008,7 +1437,8 @@ class DisplayControlApp(ctk.CTk):
     def load_config(self):
         self.config = {
             "startup_preset": "Nenhum",
-            "custom_presets": {}
+            "custom_presets": {},
+            "language": get_system_lang()
         }
         if not os.path.exists(CONFIG_DIR):
             try:
@@ -1033,44 +1463,43 @@ class DisplayControlApp(ctk.CTk):
 
     def update_presets_menus(self):
         custom_names = list(self.config.get("custom_presets", {}).keys())
+        none_lbl = self.translate("none_option")
         
         # 1. Update Custom Presets dropdown in presets frame
+        custom_options = [none_lbl] + custom_names
+        self.custom_preset_menu.configure(values=custom_options)
+        
+        current_custom = self.custom_preset_var.get()
+        if current_custom not in custom_options:
+            self.custom_preset_var.set(none_lbl)
+            
         if custom_names:
-            self.custom_preset_menu.configure(values=custom_names)
-            current_custom = self.custom_preset_var.get()
-            if current_custom not in custom_names:
-                self.custom_preset_var.set(custom_names[0])
             self.delete_preset_btn.configure(state="normal")
         else:
-            self.custom_preset_menu.configure(values=["Nenhum"])
-            self.custom_preset_var.set("Nenhum")
             self.delete_preset_btn.configure(state="disabled")
             
         # 2. Update Startup Preset dropdown in header
-        startup_options = ["Nenhum"] + list(PRESETS.keys()) + custom_names
+        startup_options = [none_lbl] + [self.translate(f"presets.{k}") for k in PRESETS.keys()] + custom_names
         self.startup_preset_menu.configure(values=startup_options)
         
         current_startup = self.config.get("startup_preset", "Nenhum")
-        if current_startup in startup_options:
-            self.startup_preset_var.set(current_startup)
-        else:
-            self.startup_preset_var.set("Nenhum")
-            self.config["startup_preset"] = "Nenhum"
-            self.save_config()
+        self.startup_preset_var.set(self.preset_key_to_ui(current_startup))
 
     def on_startup_preset_changed(self, selected_value):
-        self.config["startup_preset"] = selected_value
+        internal_key = self.ui_to_preset_key(selected_value)
+        self.config["startup_preset"] = internal_key
         self.save_config()
-        self.update_status_bar(f"Perfil inicial configurado para: {selected_value}")
+        self.update_status_bar(self.translate("status_startup_preset_changed").format(selected_value))
 
     def on_custom_preset_selected(self, name):
-        if name == "Nenhum" or not name:
+        none_lbl = self.translate("none_option")
+        if name == none_lbl or not name:
             return
         custom_presets = self.config.get("custom_presets", {})
         if name in custom_presets:
             preset_data = custom_presets[name]
             self.apply_custom_preset_data(preset_data)
-            self.update_status_bar(f"Perfil '{name}' aplicado.")
+            self.update_status_bar(self.translate("status_preset_applied").format(name))
 
     def apply_custom_preset_data(self, preset_data):
         if not isinstance(preset_data, list):
@@ -1092,19 +1521,19 @@ class DisplayControlApp(ctk.CTk):
                 b_slider = self.slider_vars.get((idx, "brightness_slider"))
                 if b_slider:
                     b_slider.set(b_val)
-                    self.slider_vars[(idx, "brightness")].set(f"Brilho: {b_val}%")
+                    self.slider_vars[(idx, "brightness")].set(self.translate("brightness").format(b_val))
                 
                 c_slider = self.slider_vars.get((idx, "contrast_slider"))
                 if c_slider:
                     c_slider.set(c_val)
-                    self.slider_vars[(idx, "contrast")].set(f"Contraste: {c_val}%")
+                    self.slider_vars[(idx, "contrast")].set(self.translate("contrast").format(c_val))
                 
                 self.update_color_presets_ui(idx, col_val)
                 
                 # Update display scaling UI
                 scale_dropdown = self.slider_vars.get((idx, "display_scaling_dropdown"))
                 if scale_dropdown:
-                    scale_dropdown.set(REVERSE_SCALING_MAP.get(scaling_val, "Proporcional"))
+                    scale_dropdown.set(self.get_scaling_label(scaling_val))
                 
                 self.worker.set_value(idx, "brightness", b_val)
                 self.worker.set_value(idx, "contrast", c_val)
@@ -1127,7 +1556,7 @@ class DisplayControlApp(ctk.CTk):
                 mon["contrast"] = c_val
                 self.worker.set_value(idx, "brightness", b_val)
                 self.worker.set_value(idx, "contrast", c_val)
-            self.update_status_bar(f"Perfil inicial '{preset_name}' aplicado.")
+            self.update_status_bar(self.translate("status_preset_applied").format(self.preset_key_to_ui(preset_name)))
             
         elif preset_name in self.config.get("custom_presets", {}):
             preset_data = self.config["custom_presets"][preset_name]
@@ -1150,18 +1579,20 @@ class DisplayControlApp(ctk.CTk):
                         self.worker.set_value(idx, "contrast", c_val)
                         self.worker.set_value(idx, "color_preset", col_val)
                         self.worker.set_value(idx, "display_scaling", scaling_val)
-            self.update_status_bar(f"Perfil inicial '{preset_name}' aplicado.")
+            self.update_status_bar(self.translate("status_preset_applied").format(preset_name))
 
     def save_current_preset(self):
-        dialog = ctk.CTkInputDialog(text="Digite o nome para o perfil personalizado:", title="Salvar Perfil")
+        dialog = ctk.CTkInputDialog(text=self.translate("dialog_save_text"), title=self.translate("dialog_save_title"))
         name = dialog.get_input()
         if not name:
             return
         name = name.strip()
         if not name:
             return
-        if name == "Nenhum" or name in PRESETS:
-            messagebox.showerror("Nome Inválido", "Este nome de perfil é reservado pelo sistema. Por favor, escolha outro nome.")
+            
+        reserved = ["Nenhum", "None"] + list(PRESETS.keys()) + [self.translate(f"presets.{k}") for k in PRESETS.keys()]
+        if name in reserved:
+            messagebox.showerror(self.translate("dialog_save_invalid_title"), self.translate("dialog_save_invalid_text"))
             return
             
         preset_data = []
@@ -1183,13 +1614,14 @@ class DisplayControlApp(ctk.CTk):
         self.update_presets_menus()
         self.update_tray_menu()
         self.custom_preset_var.set(name)
-        self.update_status_bar(f"Perfil '{name}' salvo com sucesso.")
+        self.update_status_bar(self.translate("status_preset_saved").format(name))
 
     def delete_selected_preset(self):
         name = self.custom_preset_var.get()
-        if name == "Nenhum" or not name:
+        none_lbl = self.translate("none_option")
+        if name == none_lbl or not name:
             return
-        if messagebox.askyesno("Confirmar Exclusão", f"Tem certeza que deseja excluir o perfil '{name}'?"):
+        if messagebox.askyesno(self.translate("dialog_delete_title"), self.translate("dialog_delete_text").format(name)):
             if name in self.config.get("custom_presets", {}):
                 del self.config["custom_presets"][name]
                 if self.config.get("startup_preset") == name:
@@ -1197,7 +1629,7 @@ class DisplayControlApp(ctk.CTk):
                 self.save_config()
                 self.update_presets_menus()
                 self.update_tray_menu()
-                self.update_status_bar(f"Perfil '{name}' excluído.")
+                self.update_status_bar(self.translate("status_preset_deleted").format(name))
 
     def safe_apply_custom_preset(self, name):
         custom_presets = self.config.get("custom_presets", {})
@@ -1209,28 +1641,28 @@ class DisplayControlApp(ctk.CTk):
         if not self.tray_icon:
             return
         menu_items = [
-            pystray.MenuItem('Abrir Painel', self.restore_from_tray, default=True),
+            pystray.MenuItem(self.translate("tray_open"), self.restore_from_tray, default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem('Perfil: Leitura', lambda: self.safe_apply_preset("Leitura")),
-            pystray.MenuItem('Perfil: Trabalho', lambda: self.safe_apply_preset("Trabalho")),
-            pystray.MenuItem('Perfil: Jogos', lambda: self.safe_apply_preset("Jogos")),
-            pystray.MenuItem('Perfil: Noite', lambda: self.safe_apply_preset("Noite")),
+            pystray.MenuItem(f"{self.translate('tray_profile')}: {self.translate('presets.Leitura')}", lambda: self.safe_apply_preset("Leitura")),
+            pystray.MenuItem(f"{self.translate('tray_profile')}: {self.translate('presets.Trabalho')}", lambda: self.safe_apply_preset("Trabalho")),
+            pystray.MenuItem(f"{self.translate('tray_profile')}: {self.translate('presets.Jogos')}", lambda: self.safe_apply_preset("Jogos")),
+            pystray.MenuItem(f"{self.translate('tray_profile')}: {self.translate('presets.Noite')}", lambda: self.safe_apply_preset("Noite")),
         ]
         custom_presets = self.config.get("custom_presets", {})
         if custom_presets:
             menu_items.append(pystray.Menu.SEPARATOR)
             for name in custom_presets.keys():
                 menu_items.append(
-                    pystray.MenuItem(f'Perfil: {name}', lambda idx=None, n=name: self.safe_apply_custom_preset(n))
+                    pystray.MenuItem(f"{self.translate('tray_profile')}: {name}", lambda idx=None, n=name: self.safe_apply_custom_preset(n))
                 )
         menu_items.append(pystray.Menu.SEPARATOR)
-        menu_items.append(pystray.MenuItem('Sair', self.quit_app))
+        menu_items.append(pystray.MenuItem(self.translate("tray_quit"), self.quit_app))
         self.tray_icon.menu = pystray.Menu(*menu_items)
 
     # --- System Tray & Minimizing logic ---
     def start_tray(self):
         # Create base menu
-        menu = pystray.Menu(pystray.MenuItem('Abrir Painel', self.restore_from_tray, default=True))
+        menu = pystray.Menu(pystray.MenuItem(self.translate("tray_open"), self.restore_from_tray, default=True))
         self.tray_icon = pystray.Icon("display_control", self.icon_image, "Display Control Panel", menu)
         self.update_tray_menu()
         # Start pystray loop in a background daemon thread
@@ -1244,7 +1676,7 @@ class DisplayControlApp(ctk.CTk):
     def minimize_to_tray(self):
         self.withdraw()
         # Ensure status message
-        self.update_status_bar("Minimizado na bandeja de sistema.")
+        self.update_status_bar(self.translate("status_minimized"))
 
     def restore_from_tray(self, icon=None, item=None):
         def restore():

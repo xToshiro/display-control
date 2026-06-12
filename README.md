@@ -3,7 +3,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/release-v1.1.0-orange.svg)](https://github.com/xToshiro/display-control/releases/tag/v1.1.0)
+[![Release](https://img.shields.io/badge/release-v1.2.0-orange.svg)](https://github.com/xToshiro/display-control/releases/tag/v1.2.0)
 
 An optimized, lightweight, and modern alternative to the AOC I-Menu. This application provides a sleek side-by-side dark-mode control interface for managing image settings on dual AOC monitors using the VESA DDC/CI protocol.
 
@@ -44,7 +44,7 @@ To communicate with your monitors, please ensure:
 
 If you do not wish to run from source, you can download the compiled standalone executable:
 
-👉 **[Download DisplayControl.exe (v1.1.0)](https://github.com/xToshiro/display-control/releases/download/v1.1.0/DisplayControl.exe)**
+👉 **[Download DisplayControl.exe (v1.2.0)](https://github.com/xToshiro/display-control/releases/download/v1.2.0/DisplayControl.exe)**
 
 *(Built using PyInstaller with a custom icon, running silently without a console window).*
 
