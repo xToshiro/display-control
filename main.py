@@ -430,10 +430,14 @@ class DisplayControlApp(ctk.CTk):
             self.show_error("Nenhum monitor DDC/CI compatível encontrado.")
             return
 
+        # Adjust window width dynamically based on monitor count
+        num_monitors = len(self.monitors)
+        window_width = max(420, 20 + num_monitors * 380)
+        self.geometry(f"{window_width}x560")
+
         # Configure columns inside content frame based on monitor count
-        self.content_frame.columnconfigure(0, weight=1)
-        if len(self.monitors) > 1:
-            self.content_frame.columnconfigure(1, weight=1)
+        for col_idx in range(num_monitors):
+            self.content_frame.columnconfigure(col_idx, weight=1)
 
         # Loop through found monitors and build their sliders
         for i, mon in enumerate(self.monitors):
@@ -568,7 +572,7 @@ class DisplayControlApp(ctk.CTk):
 
         # Global Presets Bar below monitors (makes applying presets very clean)
         self.presets_frame = ctk.CTkFrame(self.content_frame, fg_color="#0F172A", border_color="#1E293B", border_width=1)
-        self.presets_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(5, 10))
+        self.presets_frame.grid(row=1, column=0, columnspan=max(1, len(self.monitors)), sticky="ew", padx=10, pady=(5, 10))
         
         lbl_pres = ctk.CTkLabel(self.presets_frame, text="Perfis Rápidos (Ambos):", font=ctk.CTkFont(size=12, weight="bold"))
         lbl_pres.pack(side="left", padx=15, pady=8)
