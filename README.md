@@ -1,48 +1,90 @@
-# Display Control Panel
+# 🖥️ AOC Display Control Panel
 
-An optimized, lightweight, and modern Python application to replace the AOC I-Menu. It provides a side-by-side graphical interface to control the image parameters (brightness, contrast, and color temperature presets) of dual monitors using the VESA DDC/CI protocol.
+[![Python Version](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/badge/release-v1.0.0-orange.svg)](https://github.com/xToshiro/display-control/releases/tag/v1.0.0)
 
-## Features
+An optimized, lightweight, and modern alternative to the AOC I-Menu. This application provides a sleek side-by-side dark-mode control interface for managing image settings on dual AOC monitors using the VESA DDC/CI protocol.
 
-- **Asynchronous Execution**: All monitor read and write commands run in background worker threads, preventing GUI freezes.
-- **Side-by-Side Control Layout**: Control two monitors independently from a single, clean CustomTkinter dark-mode panel.
-- **Linked Adjustment (Sync)**: A toggle checkbox allows you to change parameters on both monitors simultaneously.
-- **Color Presets**: Quick preset buttons for `sRGB`, `6500K`, `7500K`, `9300K`, and `User` mode (bypasses default library constraints to write low-level DDC/CI commands).
-- **Quick Profiles**: Global profile presets (`Leitura`, `Trabalho`, `Jogos`, `Noite`) to adjust both monitors with a single click.
-- **System Tray Integration**: Intercepts the window close action to minimize to the system tray (`pystray`). Includes quick presets right from the taskbar context menu.
-- **Start on Boot**: A checkbox that configures a registry run key to automatically launch the application minimized on Windows startup.
+---
 
-## Technologies Used
+## 🌟 Key Features
 
-- **Python 3.14+**
-- **CustomTkinter** for the premium dark UI theme.
-- **monitorcontrol** & **screen-brightness-control** for hardware enumeration and VESA DDC/CI commands.
-- **pystray** & **Pillow** for the system tray loop and graphics.
-- **PyInstaller** for standalone executable generation.
+* **⚡ Zero-Lag Asynchronous Engine**: All hardware communications (reads and writes) are processed in sequential background worker threads. The GUI remains 100% fluid and responsive.
+* **🖥️ Side-by-Side Dual-Monitor Panel**: View and control both displays independently side-by-side, identified by their correct model (`27B35H`) and serial numbers extracted directly from EDID metadata.
+* **🔗 Dynamic Sync mode**: Bind parameters together so adjusting brightness or contrast on one monitor automatically mirrors it onto the other.
+* **🎨 Low-Level Color Presets**: Supports raw VESA VCP Code `0x14` commands to instantly set monitor color temperatures:
+  - `sRGB` (1)
+  - `6500K` (5)
+  - `7500K` (6)
+  - `9300K` (8)
+  - `User/Usuário` (11)
+* **🌙 Global Profiles**: Apply pre-configured profile configurations (`Leitura`, `Trabalho`, `Jogos`, `Noite`) to both displays simultaneously.
+* **📥 Minimize to System Tray**: Closes directly to the system tray (`pystray`). Includes context menu presets so you can adjust your screens without even opening the main window.
+* **⚙️ Start on Boot**: A checkbox that creates a Windows registry key to automatically launch the application minimized on system startup.
 
-## How to Run
+---
 
-1. Clone this repository.
-2. Initialize and activate a virtual environment:
-   ```bash
-   python -m venv venv
-   .\venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Run the application:
-   ```bash
-   python main.py
-   ```
-   *(To run without a console window in the background, use `pythonw.exe main.py`)*
+## ⚙️ Hardware Prerequisites
 
-## Standalone Executable
+To communicate with your monitors, please ensure:
+1. **DDC/CI is Enabled** in the physical monitor's OSD (On-Screen Display) menu.
+2. The displays are connected via modern video interfaces (**HDMI**, **DisplayPort**, or **USB-C**). VGA and older DVI connections do not support the protocol.
 
-You can build a single-file standalone `.exe` using PyInstaller:
+---
+
+## 📦 Download the Executable
+
+If you do not wish to run from source, you can download the compiled standalone executable:
+
+👉 **[Download DisplayControl.exe (v1.0.0)](https://github.com/xToshiro/display-control/releases/download/v1.0.0/DisplayControl.exe)**
+
+*(Built using PyInstaller with a custom icon, running silently without a console window).*
+
+---
+
+## 🚀 Running from Source
+
+### 1. Requirements
+Ensure you have **Python 3.14+** installed.
+
+### 2. Setup Virtual Environment
+```bash
+# Clone the repository
+git clone https://github.com/xToshiro/display-control.git
+cd display-control
+
+# Create and activate virtual environment
+python -m venv venv
+.\venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Launch
+```bash
+python main.py
+```
+*To run the script in the background without launching a Command Prompt window, run with:*
+```bash
+pythonw.exe main.py
+```
+
+---
+
+## 🛠️ Building Standalone Binary
+To compile the source code into a standalone `.exe` executable file using PyInstaller:
 ```bash
 pip install pyinstaller
 pyinstaller --onefile --noconsole --name="DisplayControl" --icon="app_icon.ico" main.py
 ```
-The compiled output will be generated inside the `dist/` directory.
+The compiled file will be located inside the `dist/` directory.
+
+---
+
+## 📄 License
+This project is licensed under the MIT License.
