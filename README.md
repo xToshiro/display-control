@@ -7,6 +7,8 @@
 
 An optimized, lightweight, and modern alternative to the AOC I-Menu. This application provides a sleek side-by-side dark-mode control interface for managing image settings on dual AOC monitors using the VESA DDC/CI protocol.
 
+![Display Control Panel](app_screenshot.png)
+
 ---
 
 ## 🌟 Key Features
