@@ -21,6 +21,8 @@ An optimized, lightweight, and modern alternative to the AOC I-Menu. This applic
   - `9300K` (8)
   - `User/Usuário` (11)
 * **🌙 Global Profiles**: Apply pre-configured profile configurations (`Leitura`, `Trabalho`, `Jogos`, `Noite`) to both displays simultaneously.
+* **⚙️ Resolução e Proporção**: Altere a proporção da imagem do monitor (Wide, Aspect, 1:1) via hardware com DDC/CI (VCP `0x86`) e troque a resolução/frequência de tela do Windows diretamente pela interface.
+* **💾 Perfis Personalizados**: Crie e gerencie perfis personalizados contendo brilho, contraste, cor e escala para todas as suas telas, além de escolher qual inicia por padrão no boot do sistema.
 * 📥 Minimize to System Tray: Closes directly to the system tray (pystray). Includes context menu presets so you can adjust your screens without even opening the main window.
 * 🔒 Single Instance Protection: Prevents duplicate application windows from spawning. Re-running the application shortcut safely restores, lifts, and focuses the existing background process window.
 * 📱 Dynamic Adapting Layout: Automatically adjusts the window width and columns dynamically depending on the number of connected monitors (works seamlessly for 1, 2, 3, or more displays).

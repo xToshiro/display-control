@@ -12,6 +12,8 @@ import pystray
 from PIL import Image, ImageDraw
 import screen_brightness_control as sbc
 from monitorcontrol import get_monitors
+import win32api
+import win32con
 
 SINGLE_INSTANCE_PORT = 28935
 
@@ -43,6 +45,45 @@ APP_NAME = "DisplayControl"
 
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "DisplayControl")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
+SCALING_MAP = {"Inteiro": 3, "Proporcional": 2, "1:1": 1}
+REVERSE_SCALING_MAP = {3: "Inteiro", 2: "Proporcional", 1: "1:1"}
+
+def get_registry_monitor_uids():
+    mapping = {}
+    try:
+        display_root = "SYSTEM\\CurrentControlSet\\Enum\\DISPLAY"
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, display_root, 0, winreg.KEY_READ)
+        i = 0
+        while True:
+            try:
+                model = winreg.EnumKey(key, i)
+                model_key = winreg.OpenKey(key, model, 0, winreg.KEY_READ)
+                j = 0
+                while True:
+                    try:
+                        instance = winreg.EnumKey(model_key, j)
+                        instance_key = winreg.OpenKey(model_key, instance, 0, winreg.KEY_READ)
+                        try:
+                            driver, _ = winreg.QueryValueEx(instance_key, "Driver")
+                            if "UID" in instance:
+                                uid_str = instance.split("UID")[-1]
+                                uid = int(uid_str)
+                                mapping[driver.lower()] = uid
+                        except Exception:
+                            pass
+                        winreg.CloseKey(instance_key)
+                        j += 1
+                    except Exception:
+                        break
+                winreg.CloseKey(model_key)
+                i += 1
+            except Exception:
+                break
+        winreg.CloseKey(key)
+    except Exception as e:
+        print(f"Registry error mapping UIDs: {e}")
+    return mapping
 
 def get_monitor_name_from_edid(edid_hex):
     try:
@@ -124,14 +165,41 @@ class MonitorManager:
             self.log_status("Buscando monitores...")
             self.monitors_info = []
             
-            # 1. Fetch info using screen-brightness-control (includes EDID and Serials)
+            # 1. Fetch registry UID mapping
+            reg_mapping = get_registry_monitor_uids()
+            
+            # 2. Map GDI devices to UIDs
+            gdi_to_uid = {}
+            device_index = 0
+            while True:
+                try:
+                    device = win32api.EnumDisplayDevices(None, device_index)
+                    if device.StateFlags & win32con.DISPLAY_DEVICE_ATTACHED_TO_DESKTOP:
+                        mon_idx = 0
+                        while True:
+                            try:
+                                monitor = win32api.EnumDisplayDevices(device.DeviceName, mon_idx)
+                                parts = monitor.DeviceID.split("\\")
+                                if len(parts) >= 4:
+                                    driver_key = f"{parts[2]}\\{parts[3]}"
+                                    uid = reg_mapping.get(driver_key.lower())
+                                    if uid is not None:
+                                        gdi_to_uid[device.DeviceName] = uid
+                                mon_idx += 1
+                            except Exception:
+                                break
+                    device_index += 1
+                except Exception:
+                    break
+
+            # 3. Fetch info using screen-brightness-control (includes EDID and Serials)
             try:
                 sbc_list = sbc.list_monitors_info()
             except Exception as e:
                 print(f"Error in sbc: {e}")
                 sbc_list = []
 
-            # 2. Fetch monitor objects using monitorcontrol
+            # 4. Fetch monitor objects using monitorcontrol
             try:
                 mc_list = get_monitors()
             except Exception as e:
@@ -140,7 +208,7 @@ class MonitorManager:
 
             self.monitors_mc = mc_list
 
-            # 3. Match them up
+            # 5. Match them up
             for idx, mc_mon in enumerate(mc_list):
                 sbc_data = None
                 if idx < len(sbc_list):
@@ -160,6 +228,7 @@ class MonitorManager:
                 brightness = 50
                 contrast = 50
                 color_preset = 5  # Default to 6500K (5)
+                display_scaling = 2  # Default to Proportional
                 
                 try:
                     with mc_mon:
@@ -175,10 +244,55 @@ class MonitorManager:
 
                 try:
                     with mc_mon:
-                        # VCP Code 0x14 (20)
                         color_preset, _ = mc_mon.vcp.get_vcp_feature(0x14)
                 except Exception as e:
                     print(f"Error getting color preset for Monitor {idx+1}: {e}")
+
+                try:
+                    with mc_mon:
+                        display_scaling, _ = mc_mon.vcp.get_vcp_feature(0x86)
+                except Exception as e:
+                    print(f"Error getting display scaling for Monitor {idx+1}: {e}")
+
+                # Match to GDI device
+                gdi_device = None
+                current_resolution = None
+                resolutions_list = []
+                modes_dict = {}
+                
+                if sbc_data:
+                    sbc_uid = sbc_data.get("uid")
+                    if sbc_uid is not None:
+                        for dev, dev_uid in gdi_to_uid.items():
+                            if str(dev_uid) == str(sbc_uid):
+                                gdi_device = dev
+                                break
+                                
+                if gdi_device:
+                    try:
+                        # Get current settings
+                        current = win32api.EnumDisplaySettings(gdi_device, win32con.ENUM_CURRENT_SETTINGS)
+                        current_resolution = f"{current.PelsWidth}x{current.PelsHeight}-{current.DisplayFrequency}Hz"
+                        
+                        # Get all unique modes
+                        m_idx = 0
+                        while True:
+                            try:
+                                m = win32api.EnumDisplaySettings(gdi_device, m_idx)
+                                key = f"{m.PelsWidth}x{m.PelsHeight}-{m.DisplayFrequency}Hz"
+                                modes_dict[key] = m
+                                m_idx += 1
+                            except Exception:
+                                break
+                        
+                        sorted_keys = sorted(
+                            list(modes_dict.keys()), 
+                            key=lambda x: [int(v) for v in x.replace("x", "-").replace("Hz", "").split("-")], 
+                            reverse=True
+                        )
+                        resolutions_list = sorted_keys
+                    except Exception as e:
+                        print(f"Error enumerating settings for display {gdi_device}: {e}")
 
                 self.monitors_info.append({
                     "index": idx,
@@ -187,6 +301,11 @@ class MonitorManager:
                     "brightness": brightness,
                     "contrast": contrast,
                     "color_preset": color_preset,
+                    "display_scaling": display_scaling,
+                    "device_name": gdi_device,
+                    "current_resolution": current_resolution,
+                    "resolutions_list": resolutions_list,
+                    "modes_dict": modes_dict,
                     "object": mc_mon
                 })
 
@@ -229,6 +348,8 @@ class MonitorCommandWorker:
                     label = f"{val}%"
                     if feature == "color_preset":
                         label = {1: "sRGB", 5: "6500K", 6: "7500K", 8: "9300K", 11: "Usuário"}.get(val, "Usuário")
+                    elif feature == "display_scaling":
+                        label = {1: "1:1", 2: "Proporcional", 3: "Inteiro"}.get(val, "Proporcional")
                     
                     self.manager.log_status(f"Ajustando {feature} do Monitor {monitor_idx+1} para {label}...")
                     
@@ -242,6 +363,9 @@ class MonitorCommandWorker:
                         elif feature == "color_preset":
                             mon_obj.vcp.set_vcp_feature(0x14, val)
                             monitors[monitor_idx]["color_preset"] = val
+                        elif feature == "display_scaling":
+                            mon_obj.vcp.set_vcp_feature(0x86, val)
+                            monitors[monitor_idx]["display_scaling"] = val
                             
                     self.manager.log_status("Pronto")
             except Exception as e:
@@ -269,7 +393,7 @@ class DisplayControlApp(ctk.CTk):
 
         # Window Config
         self.title("Painel de Controle de Monitores")
-        self.geometry("840x560")
+        self.geometry("840x730")
         self.resizable(False, False)
         
         # UI Styling options
@@ -362,7 +486,7 @@ class DisplayControlApp(ctk.CTk):
 
         self.sync_check = ctk.CTkCheckBox(
             self.top_controls, 
-            text="Sincronizar Monitores", 
+            text="Sincronizar", 
             command=self.toggle_sync,
             font=ctk.CTkFont(size=12)
         )
@@ -467,8 +591,8 @@ class DisplayControlApp(ctk.CTk):
 
         # Adjust window width dynamically based on monitor count
         num_monitors = len(self.monitors)
-        window_width = max(540, 20 + num_monitors * 380)
-        self.geometry(f"{window_width}x560")
+        window_width = max(540, 20 + num_monitors * 390)
+        self.geometry(f"{window_width}x730")
 
         # Dynamically handle sync monitors checkbox
         if num_monitors > 1:
@@ -476,9 +600,11 @@ class DisplayControlApp(ctk.CTk):
         else:
             self.sync_check.pack_forget()
 
-        # Configure columns inside content frame based on monitor count
+        # Configure columns and rows inside content frame
         for col_idx in range(num_monitors):
             self.content_frame.columnconfigure(col_idx, weight=1)
+        self.content_frame.rowconfigure(0, weight=1)
+        self.content_frame.rowconfigure(1, weight=0)
 
         # Loop through found monitors and build their sliders
         for i, mon in enumerate(self.monitors):
@@ -611,6 +737,61 @@ class DisplayControlApp(ctk.CTk):
             # Set initial active button highlight
             self.update_color_presets_ui(idx, mon["color_preset"])
 
+            # Separator line before Resolution
+            sep_res = ctk.CTkFrame(col_frame, height=1, fg_color="#1E293B")
+            sep_res.pack(fill="x", padx=15, pady=8)
+
+            # Resolution Header
+            res_header = ctk.CTkLabel(col_frame, text="Resolução", font=ctk.CTkFont(size=13, weight="bold"))
+            res_header.pack(anchor="w", padx=15, pady=(2, 4))
+
+            # Controls grid container
+            res_controls_frame = ctk.CTkFrame(col_frame, fg_color="transparent")
+            res_controls_frame.pack(fill="x", padx=15, pady=(0, 10))
+            
+            # Row 0: Display Scaling
+            lbl_scale = ctk.CTkLabel(res_controls_frame, text="Tela:", font=ctk.CTkFont(size=11), width=60, anchor="w")
+            lbl_scale.grid(row=0, column=0, sticky="w", pady=4)
+            
+            scaling_modes = ["Inteiro", "Proporcional", "1:1"]
+            current_scaling_val = mon.get("display_scaling", 2)
+            current_scaling_label = REVERSE_SCALING_MAP.get(current_scaling_val, "Proporcional")
+            
+            scale_var = ctk.StringVar(value=current_scaling_label)
+            scale_menu = ctk.CTkOptionMenu(
+                res_controls_frame,
+                variable=scale_var,
+                values=scaling_modes,
+                width=160,
+                height=24,
+                font=ctk.CTkFont(size=11),
+                command=lambda val, idx=idx: self.display_scaling_changed(idx, val)
+            )
+            scale_menu.grid(row=0, column=1, sticky="ew", pady=4)
+            self.slider_vars[(idx, "display_scaling_dropdown")] = scale_menu
+            
+            # Row 1: System Resolution
+            lbl_sys_res = ctk.CTkLabel(res_controls_frame, text="Sistema:", font=ctk.CTkFont(size=11), width=60, anchor="w")
+            lbl_sys_res.grid(row=1, column=0, sticky="w", pady=4)
+            
+            resolutions_list = mon.get("resolutions_list", [])
+            current_sys_res = mon.get("current_resolution", "Nenhum")
+            if not resolutions_list:
+                resolutions_list = [current_sys_res] if current_sys_res else ["N/A"]
+                
+            sys_res_var = ctk.StringVar(value=current_sys_res if current_sys_res else "N/A")
+            sys_res_menu = ctk.CTkOptionMenu(
+                res_controls_frame,
+                variable=sys_res_var,
+                values=resolutions_list,
+                width=160,
+                height=24,
+                font=ctk.CTkFont(size=11),
+                command=lambda val, idx=idx: self.change_system_resolution(idx, val)
+            )
+            sys_res_menu.grid(row=1, column=1, sticky="ew", pady=4)
+            self.slider_vars[(idx, "system_res_dropdown")] = sys_res_menu
+
         # Global Presets Bar below monitors (makes applying presets very clean)
         self.presets_frame = ctk.CTkFrame(self.content_frame, fg_color="#0F172A", border_color="#1E293B", border_width=1)
         self.presets_frame.grid(row=1, column=0, columnspan=max(1, len(self.monitors)), sticky="ew", padx=10, pady=(5, 10))
@@ -637,7 +818,7 @@ class DisplayControlApp(ctk.CTk):
 
         # Row 1: Custom Presets
         custom_container = ctk.CTkFrame(self.presets_frame, fg_color="transparent")
-        custom_container.pack(fill="x", padx=10, pady=(0, 5))
+        custom_container.pack(fill="x", padx=10, pady=(0, 10))
         
         lbl_custom = ctk.CTkLabel(custom_container, text="Perfis Personalizados:", font=ctk.CTkFont(size=12, weight="bold"))
         lbl_custom.pack(side="left", padx=(5, 10))
@@ -697,6 +878,10 @@ class DisplayControlApp(ctk.CTk):
             # Sync color preset too
             m1_color = self.manager.monitors_info[0].get("color_preset", 5)
             self.color_preset_changed(0, m1_color)
+
+            # Sync display scaling too
+            m1_scaling = self.manager.monitors_info[0].get("display_scaling", 2)
+            self.display_scaling_changed(0, REVERSE_SCALING_MAP.get(m1_scaling, "Proporcional"))
 
     def toggle_startup(self):
         enabled = self.startup_check.get() == 1
@@ -779,6 +964,47 @@ class DisplayControlApp(ctk.CTk):
                 else:
                     btn.configure(fg_color="#1e293b", hover_color="#334155")
 
+    def display_scaling_changed(self, monitor_index, selected_label):
+        val = SCALING_MAP.get(selected_label)
+        if val is not None:
+            self.worker.set_value(monitor_index, "display_scaling", val)
+            if self.sync_enabled:
+                for mon in self.monitors:
+                    idx = mon["index"]
+                    if idx != monitor_index:
+                        dropdown = self.slider_vars.get((idx, "display_scaling_dropdown"))
+                        if dropdown:
+                            dropdown.set(selected_label)
+                        self.worker.set_value(idx, "display_scaling", val)
+
+    def change_system_resolution(self, monitor_index, selected_res):
+        if monitor_index >= len(self.monitors):
+            return
+        mon = self.monitors[monitor_index]
+        gdi_device = mon.get("device_name")
+        modes_dict = mon.get("modes_dict", {})
+        
+        if not gdi_device or not modes_dict:
+            return
+            
+        selected_mode = modes_dict.get(selected_res)
+        if not selected_mode:
+            return
+            
+        selected_mode.Fields = win32con.DM_PELSWIDTH | win32con.DM_PELSHEIGHT | win32con.DM_DISPLAYFREQUENCY
+        if hasattr(selected_mode, "DisplayOrientation"):
+            selected_mode.Fields |= win32con.DM_DISPLAYORIENTATION
+            
+        result = win32api.ChangeDisplaySettingsEx(gdi_device, selected_mode, 0)
+        if result == win32con.DISP_CHANGE_SUCCESSFUL:
+            self.update_status_bar(f"Resolução do Monitor {monitor_index+1} alterada para {selected_res}.")
+            mon["current_resolution"] = selected_res
+        else:
+            messagebox.showerror("Erro de Resolução", f"Não foi possível alterar a resolução do monitor para {selected_res}. Código de erro: {result}")
+            dropdown = self.slider_vars.get((monitor_index, "system_res_dropdown"))
+            if dropdown:
+                dropdown.set(mon.get("current_resolution", ""))
+
     def load_config(self):
         self.config = {
             "startup_preset": "Nenhum",
@@ -856,10 +1082,12 @@ class DisplayControlApp(ctk.CTk):
                 b_val = m_data.get("brightness", mon["brightness"])
                 c_val = m_data.get("contrast", mon["contrast"])
                 col_val = m_data.get("color_preset", mon["color_preset"])
+                scaling_val = m_data.get("display_scaling", mon.get("display_scaling", 2))
                 
                 mon["brightness"] = b_val
                 mon["contrast"] = c_val
                 mon["color_preset"] = col_val
+                mon["display_scaling"] = scaling_val
                 
                 b_slider = self.slider_vars.get((idx, "brightness_slider"))
                 if b_slider:
@@ -873,9 +1101,15 @@ class DisplayControlApp(ctk.CTk):
                 
                 self.update_color_presets_ui(idx, col_val)
                 
+                # Update display scaling UI
+                scale_dropdown = self.slider_vars.get((idx, "display_scaling_dropdown"))
+                if scale_dropdown:
+                    scale_dropdown.set(REVERSE_SCALING_MAP.get(scaling_val, "Proporcional"))
+                
                 self.worker.set_value(idx, "brightness", b_val)
                 self.worker.set_value(idx, "contrast", c_val)
                 self.worker.set_value(idx, "color_preset", col_val)
+                self.worker.set_value(idx, "display_scaling", scaling_val)
 
     def apply_startup_preset_if_needed(self):
         if not self.monitors:
@@ -905,14 +1139,17 @@ class DisplayControlApp(ctk.CTk):
                         b_val = m_data.get("brightness", mon["brightness"])
                         c_val = m_data.get("contrast", mon["contrast"])
                         col_val = m_data.get("color_preset", mon["color_preset"])
+                        scaling_val = m_data.get("display_scaling", mon.get("display_scaling", 2))
                         
                         mon["brightness"] = b_val
                         mon["contrast"] = c_val
                         mon["color_preset"] = col_val
+                        mon["display_scaling"] = scaling_val
                         
                         self.worker.set_value(idx, "brightness", b_val)
                         self.worker.set_value(idx, "contrast", c_val)
                         self.worker.set_value(idx, "color_preset", col_val)
+                        self.worker.set_value(idx, "display_scaling", scaling_val)
             self.update_status_bar(f"Perfil inicial '{preset_name}' aplicado.")
 
     def save_current_preset(self):
@@ -933,10 +1170,12 @@ class DisplayControlApp(ctk.CTk):
             b_val = int(self.slider_vars[(idx, "brightness_slider")].get())
             c_val = int(self.slider_vars[(idx, "contrast_slider")].get())
             col_val = mon.get("color_preset", 5)
+            scaling_val = mon.get("display_scaling", 2)
             preset_data.append({
                 "brightness": b_val,
                 "contrast": c_val,
-                "color_preset": col_val
+                "color_preset": col_val,
+                "display_scaling": scaling_val
             })
             
         self.config["custom_presets"][name] = preset_data
