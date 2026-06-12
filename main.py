@@ -5,6 +5,8 @@ import winreg
 import sys
 import os
 import socket
+import json
+from tkinter import messagebox
 import customtkinter as ctk
 import pystray
 from PIL import Image, ImageDraw
@@ -39,6 +41,9 @@ PRESETS = {
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 APP_NAME = "DisplayControl"
 
+CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "DisplayControl")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+
 def get_monitor_name_from_edid(edid_hex):
     try:
         edid_bytes = bytes.fromhex(edid_hex)
@@ -60,9 +65,9 @@ def set_run_on_startup(enabled):
             script_path = os.path.abspath(sys.argv[0])
             if script_path.endswith('.py'):
                 pythonw_path = sys.executable.replace("python.exe", "pythonw.exe")
-                cmd = f'"{pythonw_path}" "{script_path}"'
+                cmd = f'"{pythonw_path}" "{script_path}" --minimized'
             else:
-                cmd = f'"{script_path}"'
+                cmd = f'"{script_path}" --minimized'
             winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, cmd)
         else:
             try:
@@ -253,6 +258,15 @@ class DisplayControlApp(ctk.CTk):
         # Start single instance listener
         self.start_single_instance_listener(bound_socket)
 
+        # Check if starting minimized
+        if "--minimized" in sys.argv:
+            self.withdraw()
+
+        # Load configuration
+        self.load_config()
+
+        self.is_first_scan = True
+
         # Window Config
         self.title("Painel de Controle de Monitores")
         self.geometry("840x560")
@@ -327,13 +341,31 @@ class DisplayControlApp(ctk.CTk):
         if is_run_on_startup():
             self.startup_check.select()
 
+        # Startup Preset Dropdown in top right
+        self.startup_preset_container = ctk.CTkFrame(self.top_controls, fg_color="transparent")
+        self.startup_preset_container.pack(side="left", padx=10)
+        
+        lbl_start_pres = ctk.CTkLabel(self.startup_preset_container, text="Perfil Inicial:", font=ctk.CTkFont(size=12))
+        lbl_start_pres.pack(side="left", padx=(0, 5))
+        
+        self.startup_preset_var = ctk.StringVar(value="Nenhum")
+        self.startup_preset_menu = ctk.CTkOptionMenu(
+            self.startup_preset_container,
+            variable=self.startup_preset_var,
+            values=["Nenhum"],
+            width=120,
+            height=24,
+            font=ctk.CTkFont(size=11),
+            command=self.on_startup_preset_changed
+        )
+        self.startup_preset_menu.pack(side="left")
+
         self.sync_check = ctk.CTkCheckBox(
             self.top_controls, 
             text="Sincronizar Monitores", 
             command=self.toggle_sync,
             font=ctk.CTkFont(size=12)
         )
-        self.sync_check.pack(side="left", padx=10)
 
         # --- Content Frame (Contains monitors or loading indicator) ---
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -417,6 +449,9 @@ class DisplayControlApp(ctk.CTk):
 
     def _scan_thread_worker(self):
         self.monitors = self.manager.scan_monitors()
+        if self.is_first_scan:
+            self.is_first_scan = False
+            self.apply_startup_preset_if_needed()
         self.after(0, self.render_monitors_ui)
 
     def render_monitors_ui(self):
@@ -432,8 +467,14 @@ class DisplayControlApp(ctk.CTk):
 
         # Adjust window width dynamically based on monitor count
         num_monitors = len(self.monitors)
-        window_width = max(420, 20 + num_monitors * 380)
+        window_width = max(540, 20 + num_monitors * 380)
         self.geometry(f"{window_width}x560")
+
+        # Dynamically handle sync monitors checkbox
+        if num_monitors > 1:
+            self.sync_check.pack(side="left", padx=10)
+        else:
+            self.sync_check.pack_forget()
 
         # Configure columns inside content frame based on monitor count
         for col_idx in range(num_monitors):
@@ -574,12 +615,16 @@ class DisplayControlApp(ctk.CTk):
         self.presets_frame = ctk.CTkFrame(self.content_frame, fg_color="#0F172A", border_color="#1E293B", border_width=1)
         self.presets_frame.grid(row=1, column=0, columnspan=max(1, len(self.monitors)), sticky="ew", padx=10, pady=(5, 10))
         
-        lbl_pres = ctk.CTkLabel(self.presets_frame, text="Perfis Rápidos (Ambos):", font=ctk.CTkFont(size=12, weight="bold"))
-        lbl_pres.pack(side="left", padx=15, pady=8)
+        # Row 0: Standard Presets
+        std_container = ctk.CTkFrame(self.presets_frame, fg_color="transparent")
+        std_container.pack(fill="x", padx=10, pady=5)
+        
+        lbl_pres = ctk.CTkLabel(std_container, text="Perfis Padrão (Ambos):", font=ctk.CTkFont(size=12, weight="bold"))
+        lbl_pres.pack(side="left", padx=(5, 10))
         
         for name, values in PRESETS.items():
             btn = ctk.CTkButton(
-                self.presets_frame, 
+                std_container, 
                 text=name, 
                 width=85, 
                 height=26,
@@ -588,7 +633,55 @@ class DisplayControlApp(ctk.CTk):
                 font=ctk.CTkFont(size=11),
                 command=lambda b=values[0], c=values[1]: self.apply_global_preset(b, c)
             )
-            btn.pack(side="left", padx=6, pady=8)
+            btn.pack(side="left", padx=5)
+
+        # Row 1: Custom Presets
+        custom_container = ctk.CTkFrame(self.presets_frame, fg_color="transparent")
+        custom_container.pack(fill="x", padx=10, pady=(0, 5))
+        
+        lbl_custom = ctk.CTkLabel(custom_container, text="Perfis Personalizados:", font=ctk.CTkFont(size=12, weight="bold"))
+        lbl_custom.pack(side="left", padx=(5, 10))
+        
+        self.custom_presets_options = ["Nenhum"]
+        self.custom_preset_var = ctk.StringVar(value="Nenhum")
+        self.custom_preset_menu = ctk.CTkOptionMenu(
+            custom_container,
+            variable=self.custom_preset_var,
+            values=self.custom_presets_options,
+            width=140,
+            height=26,
+            font=ctk.CTkFont(size=11),
+            command=self.on_custom_preset_selected
+        )
+        self.custom_preset_menu.pack(side="left", padx=5)
+        
+        self.save_preset_btn = ctk.CTkButton(
+            custom_container,
+            text="Salvar Atual",
+            width=90,
+            height=26,
+            fg_color="#0EA5E9",
+            hover_color="#0284c7",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self.save_current_preset
+        )
+        self.save_preset_btn.pack(side="left", padx=5)
+        
+        self.delete_preset_btn = ctk.CTkButton(
+            custom_container,
+            text="Excluir",
+            width=70,
+            height=26,
+            fg_color="#331A1A",
+            hover_color="#552222",
+            text_color="#FF6666",
+            font=ctk.CTkFont(size=11),
+            command=self.delete_selected_preset
+        )
+        self.delete_preset_btn.pack(side="left", padx=5)
+
+        # Load option menus dropdown selections
+        self.update_presets_menus()
 
         self.update_status_bar("Pronto")
 
@@ -686,20 +779,221 @@ class DisplayControlApp(ctk.CTk):
                 else:
                     btn.configure(fg_color="#1e293b", hover_color="#334155")
 
-    # --- System Tray & Minimizing logic ---
-    def start_tray(self):
-        # Create menu items
-        menu = pystray.Menu(
+    def load_config(self):
+        self.config = {
+            "startup_preset": "Nenhum",
+            "custom_presets": {}
+        }
+        if not os.path.exists(CONFIG_DIR):
+            try:
+                os.makedirs(CONFIG_DIR, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating config dir: {e}")
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict):
+                        self.config.update(loaded)
+            except Exception as e:
+                print(f"Error reading config: {e}")
+
+    def save_config(self):
+        try:
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"Error saving config: {e}")
+
+    def update_presets_menus(self):
+        custom_names = list(self.config.get("custom_presets", {}).keys())
+        
+        # 1. Update Custom Presets dropdown in presets frame
+        if custom_names:
+            self.custom_preset_menu.configure(values=custom_names)
+            current_custom = self.custom_preset_var.get()
+            if current_custom not in custom_names:
+                self.custom_preset_var.set(custom_names[0])
+            self.delete_preset_btn.configure(state="normal")
+        else:
+            self.custom_preset_menu.configure(values=["Nenhum"])
+            self.custom_preset_var.set("Nenhum")
+            self.delete_preset_btn.configure(state="disabled")
+            
+        # 2. Update Startup Preset dropdown in header
+        startup_options = ["Nenhum"] + list(PRESETS.keys()) + custom_names
+        self.startup_preset_menu.configure(values=startup_options)
+        
+        current_startup = self.config.get("startup_preset", "Nenhum")
+        if current_startup in startup_options:
+            self.startup_preset_var.set(current_startup)
+        else:
+            self.startup_preset_var.set("Nenhum")
+            self.config["startup_preset"] = "Nenhum"
+            self.save_config()
+
+    def on_startup_preset_changed(self, selected_value):
+        self.config["startup_preset"] = selected_value
+        self.save_config()
+        self.update_status_bar(f"Perfil inicial configurado para: {selected_value}")
+
+    def on_custom_preset_selected(self, name):
+        if name == "Nenhum" or not name:
+            return
+        custom_presets = self.config.get("custom_presets", {})
+        if name in custom_presets:
+            preset_data = custom_presets[name]
+            self.apply_custom_preset_data(preset_data)
+            self.update_status_bar(f"Perfil '{name}' aplicado.")
+
+    def apply_custom_preset_data(self, preset_data):
+        if not isinstance(preset_data, list):
+            return
+        for mon in self.monitors:
+            idx = mon["index"]
+            if idx < len(preset_data):
+                m_data = preset_data[idx]
+                b_val = m_data.get("brightness", mon["brightness"])
+                c_val = m_data.get("contrast", mon["contrast"])
+                col_val = m_data.get("color_preset", mon["color_preset"])
+                
+                mon["brightness"] = b_val
+                mon["contrast"] = c_val
+                mon["color_preset"] = col_val
+                
+                b_slider = self.slider_vars.get((idx, "brightness_slider"))
+                if b_slider:
+                    b_slider.set(b_val)
+                    self.slider_vars[(idx, "brightness")].set(f"Brilho: {b_val}%")
+                
+                c_slider = self.slider_vars.get((idx, "contrast_slider"))
+                if c_slider:
+                    c_slider.set(c_val)
+                    self.slider_vars[(idx, "contrast")].set(f"Contraste: {c_val}%")
+                
+                self.update_color_presets_ui(idx, col_val)
+                
+                self.worker.set_value(idx, "brightness", b_val)
+                self.worker.set_value(idx, "contrast", c_val)
+                self.worker.set_value(idx, "color_preset", col_val)
+
+    def apply_startup_preset_if_needed(self):
+        if not self.monitors:
+            return
+            
+        preset_name = self.config.get("startup_preset", "Nenhum")
+        if not preset_name or preset_name == "Nenhum":
+            return
+            
+        if preset_name in PRESETS:
+            b_val, c_val = PRESETS[preset_name]
+            for mon in self.monitors:
+                idx = mon["index"]
+                mon["brightness"] = b_val
+                mon["contrast"] = c_val
+                self.worker.set_value(idx, "brightness", b_val)
+                self.worker.set_value(idx, "contrast", c_val)
+            self.update_status_bar(f"Perfil inicial '{preset_name}' aplicado.")
+            
+        elif preset_name in self.config.get("custom_presets", {}):
+            preset_data = self.config["custom_presets"][preset_name]
+            if isinstance(preset_data, list):
+                for mon in self.monitors:
+                    idx = mon["index"]
+                    if idx < len(preset_data):
+                        m_data = preset_data[idx]
+                        b_val = m_data.get("brightness", mon["brightness"])
+                        c_val = m_data.get("contrast", mon["contrast"])
+                        col_val = m_data.get("color_preset", mon["color_preset"])
+                        
+                        mon["brightness"] = b_val
+                        mon["contrast"] = c_val
+                        mon["color_preset"] = col_val
+                        
+                        self.worker.set_value(idx, "brightness", b_val)
+                        self.worker.set_value(idx, "contrast", c_val)
+                        self.worker.set_value(idx, "color_preset", col_val)
+            self.update_status_bar(f"Perfil inicial '{preset_name}' aplicado.")
+
+    def save_current_preset(self):
+        dialog = ctk.CTkInputDialog(text="Digite o nome para o perfil personalizado:", title="Salvar Perfil")
+        name = dialog.get_input()
+        if not name:
+            return
+        name = name.strip()
+        if not name:
+            return
+        if name == "Nenhum" or name in PRESETS:
+            messagebox.showerror("Nome Inválido", "Este nome de perfil é reservado pelo sistema. Por favor, escolha outro nome.")
+            return
+            
+        preset_data = []
+        for mon in self.monitors:
+            idx = mon["index"]
+            b_val = int(self.slider_vars[(idx, "brightness_slider")].get())
+            c_val = int(self.slider_vars[(idx, "contrast_slider")].get())
+            col_val = mon.get("color_preset", 5)
+            preset_data.append({
+                "brightness": b_val,
+                "contrast": c_val,
+                "color_preset": col_val
+            })
+            
+        self.config["custom_presets"][name] = preset_data
+        self.save_config()
+        self.update_presets_menus()
+        self.update_tray_menu()
+        self.custom_preset_var.set(name)
+        self.update_status_bar(f"Perfil '{name}' salvo com sucesso.")
+
+    def delete_selected_preset(self):
+        name = self.custom_preset_var.get()
+        if name == "Nenhum" or not name:
+            return
+        if messagebox.askyesno("Confirmar Exclusão", f"Tem certeza que deseja excluir o perfil '{name}'?"):
+            if name in self.config.get("custom_presets", {}):
+                del self.config["custom_presets"][name]
+                if self.config.get("startup_preset") == name:
+                    self.config["startup_preset"] = "Nenhum"
+                self.save_config()
+                self.update_presets_menus()
+                self.update_tray_menu()
+                self.update_status_bar(f"Perfil '{name}' excluído.")
+
+    def safe_apply_custom_preset(self, name):
+        custom_presets = self.config.get("custom_presets", {})
+        if name in custom_presets:
+            preset_data = custom_presets[name]
+            self.after(0, lambda: self.apply_custom_preset_data(preset_data))
+
+    def update_tray_menu(self):
+        if not self.tray_icon:
+            return
+        menu_items = [
             pystray.MenuItem('Abrir Painel', self.restore_from_tray, default=True),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem('Perfil: Leitura', lambda: self.safe_apply_preset("Leitura")),
             pystray.MenuItem('Perfil: Trabalho', lambda: self.safe_apply_preset("Trabalho")),
             pystray.MenuItem('Perfil: Jogos', lambda: self.safe_apply_preset("Jogos")),
             pystray.MenuItem('Perfil: Noite', lambda: self.safe_apply_preset("Noite")),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem('Sair', self.quit_app)
-        )
+        ]
+        custom_presets = self.config.get("custom_presets", {})
+        if custom_presets:
+            menu_items.append(pystray.Menu.SEPARATOR)
+            for name in custom_presets.keys():
+                menu_items.append(
+                    pystray.MenuItem(f'Perfil: {name}', lambda idx=None, n=name: self.safe_apply_custom_preset(n))
+                )
+        menu_items.append(pystray.Menu.SEPARATOR)
+        menu_items.append(pystray.MenuItem('Sair', self.quit_app))
+        self.tray_icon.menu = pystray.Menu(*menu_items)
+
+    # --- System Tray & Minimizing logic ---
+    def start_tray(self):
+        # Create base menu
+        menu = pystray.Menu(pystray.MenuItem('Abrir Painel', self.restore_from_tray, default=True))
         self.tray_icon = pystray.Icon("display_control", self.icon_image, "Display Control Panel", menu)
+        self.update_tray_menu()
         # Start pystray loop in a background daemon thread
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
