@@ -19,7 +19,7 @@ from monitorcontrol import get_monitors
 import win32api
 import win32con
 
-VERSION = "v1.2.0"
+VERSION = "v1.3.0"
 
 TRANSLATIONS = {
     "pt": {
@@ -85,7 +85,10 @@ TRANSLATIONS = {
         "status_preset_deleted": "Perfil '{}' excluído.",
         "status_res_changed": "Resolução do Monitor {} alterada para {}.",
         "status_res_error_title": "Erro de Resolução",
-        "status_res_error_text": "Não foi possível alterar a resolução do monitor para {}. Código: {}"
+        "status_res_error_text": "Não foi possível alterar a resolução do monitor para {}. Código: {}",
+        "power": "Energia",
+        "power_on": "Ligar",
+        "power_off": "Desligar"
     },
     "en": {
         "title": "Monitor Control Panel",
@@ -150,7 +153,10 @@ TRANSLATIONS = {
         "status_preset_deleted": "Profile '{}' deleted.",
         "status_res_changed": "Monitor {} resolution changed to {}.",
         "status_res_error_title": "Resolution Error",
-        "status_res_error_text": "Could not change monitor resolution to {}. Code: {}"
+        "status_res_error_text": "Could not change monitor resolution to {}. Code: {}",
+        "power": "Power",
+        "power_on": "Turn On",
+        "power_off": "Turn Off"
     }
 }
 
@@ -510,6 +516,8 @@ class MonitorCommandWorker:
                         label = {1: "sRGB", 5: "6500K", 6: "7500K", 8: "9300K", 11: "Usuário"}.get(val, "Usuário")
                     elif feature == "display_scaling":
                         label = {1: "1:1", 2: "Proporcional", 3: "Inteiro"}.get(val, "Proporcional")
+                    elif feature == "power":
+                        label = "Ligar" if val == 1 else "Desligar (Standby)"
                     
                     self.manager.log_status(f"Ajustando {feature} do Monitor {monitor_idx+1} para {label}...")
                     
@@ -526,6 +534,8 @@ class MonitorCommandWorker:
                         elif feature == "display_scaling":
                             mon_obj.vcp.set_vcp_feature(0x86, val)
                             monitors[monitor_idx]["display_scaling"] = val
+                        elif feature == "power":
+                            mon_obj.vcp.set_vcp_feature(0xD6, val)
                             
                     self.manager.log_status("Pronto")
             except Exception as e:
@@ -586,7 +596,7 @@ class DisplayControlApp(ctk.CTk):
 
         # Window Config
         self.title(self.translate("title"))
-        self.geometry("800x730")
+        self.geometry("800x850")
         self.resizable(False, False)
         
         # UI Styling options
@@ -1017,7 +1027,7 @@ class DisplayControlApp(ctk.CTk):
         # Adjust window width dynamically based on monitor count
         num_monitors = len(self.monitors)
         window_width = max(680, 20 + num_monitors * 410)
-        self.geometry(f"{window_width}x730")
+        self.geometry(f"{window_width}x850")
 
         # Dynamically handle sync monitors checkbox
         if num_monitors > 1:
@@ -1216,6 +1226,42 @@ class DisplayControlApp(ctk.CTk):
             )
             sys_res_menu.grid(row=1, column=1, sticky="ew", pady=4)
             self.slider_vars[(idx, "system_res_dropdown")] = sys_res_menu
+
+            # Separator line before Power
+            sep_power = ctk.CTkFrame(col_frame, height=1, fg_color="#1E293B")
+            sep_power.pack(fill="x", padx=15, pady=8)
+
+            # Power Header
+            power_header = ctk.CTkLabel(col_frame, text=self.translate("power"), font=ctk.CTkFont(size=13, weight="bold"))
+            power_header.pack(anchor="w", padx=15, pady=(2, 4))
+
+            # Power Buttons Frame
+            power_btn_frame = ctk.CTkFrame(col_frame, fg_color="transparent")
+            power_btn_frame.pack(fill="x", padx=15, pady=(0, 10))
+
+            btn_power_on = ctk.CTkButton(
+                power_btn_frame,
+                text=self.translate("power_on"),
+                width=100,
+                height=26,
+                fg_color="#10B981",
+                hover_color="#059669",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda idx=idx: self.set_power_state(idx, 1)
+            )
+            btn_power_on.pack(side="left", padx=5, expand=True, fill="x")
+
+            btn_power_off = ctk.CTkButton(
+                power_btn_frame,
+                text=self.translate("power_off"),
+                width=100,
+                height=26,
+                fg_color="#EF4444",
+                hover_color="#DC2626",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                command=lambda idx=idx: self.set_power_state(idx, 4)
+            )
+            btn_power_off.pack(side="right", padx=5, expand=True, fill="x")
 
         # Global Presets Bar below monitors (makes applying presets very clean)
         self.presets_frame = ctk.CTkFrame(self.tab_monitors, fg_color="#0F172A", border_color="#1E293B", border_width=1)
@@ -1433,6 +1479,16 @@ class DisplayControlApp(ctk.CTk):
             dropdown = self.slider_vars.get((monitor_index, "system_res_dropdown"))
             if dropdown:
                 dropdown.set(mon.get("current_resolution", ""))
+
+    def set_power_state(self, monitor_index, value):
+        state_name = self.translate("power_on") if value == 1 else self.translate("power_off")
+        self.update_status_bar(f"Enviando comando de energia ({state_name}) para Monitor {monitor_index+1}...")
+        self.worker.set_value(monitor_index, "power", value)
+        if self.sync_enabled:
+            for mon in self.monitors:
+                idx = mon["index"]
+                if idx != monitor_index:
+                    self.worker.set_value(idx, "power", value)
 
     def load_config(self):
         self.config = {
